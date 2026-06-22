@@ -1,0 +1,35 @@
+# --- ANDROID / KOTLIN MOBILE ---
+.gradle/
+build/
+captures/
+.externalNativeBuild/
+.cxx/
+local.properties
+# SECRETOS DE FIREBASE (LO QUE DETECTÓ GITHUB)
+google-services.json
+*.bundle
+*.js.map
+*.apk
+*.ap_
+*.aab
+
+# --- BACKEND / KTOR / INTELLIJ ---
+.idea/
+out/
+target/
+*.iml
+*.class
+*.log
+# Configuraciones locales de DB
+database.properties
+.env
+
+# --- SISTEMA ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- TEMPORALES DE EDICIÓN ---
+*.swp
+*~
+  .stack-work/
