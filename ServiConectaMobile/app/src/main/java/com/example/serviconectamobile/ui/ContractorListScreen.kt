@@ -92,7 +92,7 @@ fun ContractorCard(
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Star, null, tint = accentColor, modifier = Modifier.size(16.dp))
-                    Text(" 4.7", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(" ${contractor.AvrRating}", color = Color.White, fontWeight = FontWeight.Bold)
                 }
             }
             Spacer(modifier = Modifier.height(12.dp))

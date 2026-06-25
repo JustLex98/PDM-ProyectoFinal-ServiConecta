@@ -33,13 +33,9 @@ fun ChatScreen(receiverId: Int, receiverName: String, onBack: () -> Unit) {
     var messageText by remember { mutableStateOf("") }
     var messages by remember { mutableStateOf<List<Message>>(emptyList()) }
 
-    // ID Único para la conversación (ordenamos los IDs para que siempre sea el mismo canal)
     val chatId = if (session.getUserId() < receiverId)
-        "${session.getUserId()}_$receiverId"
-    else
-        "${receiverId}_${session.getUserId()}"
+        "${session.getUserId()}_$receiverId" else "${receiverId}_${session.getUserId()}"
 
-    // Escuchar mensajes en TIEMPO REAL
     LaunchedEffect(Unit) {
         db.collection("chats").document(chatId).collection("messages")
             .orderBy("timestamp", Query.Direction.ASCENDING)
@@ -54,100 +50,70 @@ fun ChatScreen(receiverId: Int, receiverName: String, onBack: () -> Unit) {
         containerColor = Color.Black,
         topBar = {
             TopAppBar(
-                title = {
-                    Column {
-                        Text(receiverName.uppercase(), fontSize = 14.sp, fontWeight = FontWeight.Black)
-                        Text("CHAT DE SERVICONECTA", fontSize = 10.sp, color = orangeBrand)
-                    }
-                },
+                title = { Text(receiverName.uppercase(), fontSize = 16.sp, fontWeight = FontWeight.Black) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, null, tint = orangeBrand)
-                    }
+                    IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null, tint = orangeBrand) }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF1A1A1A), titleContentColor = Color.White)
             )
         }
     ) { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize()) {
-
-            // Lista de mensajes (Burbujas)
-            LazyColumn(
-                modifier = Modifier.weight(1f).padding(horizontal = 16.dp),
-                contentPadding = PaddingValues(vertical = 16.dp)
-            ) {
+            LazyColumn(modifier = Modifier.weight(1f).padding(horizontal = 16.dp)) {
                 items(messages) { msg ->
                     val isMe = msg.senderId == session.getUserId()
-                    Box(
-                        modifier = Modifier.fillMaxWidth(),
-                        contentAlignment = if (isMe) Alignment.CenterEnd else Alignment.CenterStart
-                    ) {
+                    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = if (isMe) Alignment.CenterEnd else Alignment.CenterStart) {
                         Surface(
                             color = if (isMe) orangeBrand else Color(0xFF222222),
-                            shape = RoundedCornerShape(
-                                topStart = 12.dp,
-                                topEnd = 12.dp,
-                                bottomStart = if (isMe) 12.dp else 0.dp,
-                                bottomEnd = if (isMe) 0.dp else 12.dp
-                            ),
-                            modifier = Modifier.padding(vertical = 4.dp).widthIn(max = 280.dp)
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.padding(vertical = 4.dp)
                         ) {
                             Text(
                                 text = msg.message,
                                 color = if (isMe) Color.Black else Color.White,
                                 modifier = Modifier.padding(12.dp),
-                                fontSize = 14.sp,
-                                fontWeight = if (isMe) FontWeight.Bold else FontWeight.Normal
+                                fontSize = 14.sp
                             )
                         }
                     }
                 }
             }
 
-            // Barra de entrada de texto
-            Surface(
-                color = Color(0xFF1A1A1A),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+            Surface(color = Color(0xFF1A1A1A)) {
+                Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
                         value = messageText,
                         onValueChange = { messageText = it },
                         placeholder = { Text("Escribe un mensaje...", color = Color.Gray) },
                         modifier = Modifier.weight(1f),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = orangeBrand,
-                            unfocusedBorderColor = Color.DarkGray,
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White
-                        ),
+                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = orangeBrand, unfocusedBorderColor = Color.DarkGray, focusedTextColor = Color.White, unfocusedTextColor = Color.White),
                         shape = RoundedCornerShape(25.dp)
                     )
-
                     Spacer(Modifier.width(8.dp))
-
                     IconButton(
                         onClick = {
                             if (messageText.isNotBlank()) {
-                                val newMsg = Message(
-                                    senderId = session.getUserId(),
-                                    receiverId = receiverId,
-                                    message = messageText,
-                                    timestamp = System.currentTimeMillis(),
-                                    senderName = session.getUserName()
+                                val msgData = Message(session.getUserId(), receiverId, messageText, System.currentTimeMillis(), session.getUserName())
+
+                                // 1. Guardar el mensaje en la sub-colección
+                                db.collection("chats").document(chatId).collection("messages").add(msgData)
+
+                                // 2. ACTUALIZAR EL DOCUMENTO PADRE (Para que aparezca en el Inbox del otro)
+                                val chatSummary = mapOf(
+                                    "lastMessage" to messageText,
+                                    "user1Id" to session.getUserId(),
+                                    "user1Name" to session.getUserName(),
+                                    "user2Id" to receiverId,
+                                    "user2Name" to receiverName,
+                                    "timestamp" to System.currentTimeMillis()
                                 )
-                                db.collection("chats").document(chatId)
-                                    .collection("messages").add(newMsg)
+                                db.collection("chats").document(chatId).set(chatSummary)
+
                                 messageText = ""
                             }
                         },
                         modifier = Modifier.background(orangeBrand, RoundedCornerShape(50.dp))
-                    ) {
-                        Icon(Icons.Default.Send, null, tint = Color.Black)
-                    }
+                    ) { Icon(Icons.Default.Send, null, tint = Color.Black) }
                 }
             }
         }

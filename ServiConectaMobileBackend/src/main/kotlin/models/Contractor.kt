@@ -9,7 +9,8 @@ data class Contractor(
     val LastName: String,
     val BusinessName: String?,
     val Bio: String?,
-    val YearsOfExperience: Int
+    val YearsOfExperience: Int,
+    val AvrRating: Double
 )
 
 @Serializable

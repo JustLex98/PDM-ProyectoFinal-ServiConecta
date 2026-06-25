@@ -37,7 +37,8 @@ data class ContractorResponse(
     val LastName: String,
     val BusinessName: String?,
     val Bio: String?,
-    val YearsOfExperience: Int
+    val YearsOfExperience: Int,
+    val AvrRating: Double
 )
 data class ReviewResponse(
     val ReviewID: Int,
@@ -53,7 +54,7 @@ data class ContractorFullDetail(
     val averageRating: Double
 )
 
-// PARA ENVIAR RESEÑAS
+
 data class ReviewRequest(
     val Rating: Int,
     val Comment: String,
@@ -61,7 +62,6 @@ data class ReviewRequest(
     val ContractorID: Int
 )
 
-// PARA EL CHAT
 data class Message(
     val senderId: Int = 0,
     val receiverId: Int = 0,
@@ -70,7 +70,6 @@ data class Message(
     val senderName: String = ""
 )
 
-// PARA LA LISTA DE CHATS
 data class InboxChat(
     val otherUserId: Int,
     val otherUserName: String,

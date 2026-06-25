@@ -30,7 +30,8 @@ fun Route.publicRoutes() {
             try {
                 val contractors = mutableListOf<Contractor>()
                 val query = """
-                    SELECT U.UserID, U.FirstName, U.LastName, CP.BusinessName, CP.Bio, CP.YearsOfExperience
+                    SELECT U.UserID, U.FirstName, U.LastName, CP.BusinessName, CP.Bio, CP.YearsOfExperience,
+                    COALESCE((SELECT AVG(CAST(Rating AS FLOAT)) FROM Reviews WHERE ContractorID = U.UserID), 0.0) as AvgRating
                     FROM Users U
                     JOIN ContractorProfiles CP ON U.UserID = CP.UserID
                     JOIN ContractorCategories CC ON U.UserID = CC.UserID
@@ -40,7 +41,12 @@ fun Route.publicRoutes() {
                 stmt.setInt(1, categoryId)
                 val rs = stmt.executeQuery()
                 while (rs.next()) {
-                    contractors.add(Contractor(rs.getInt("UserID"), rs.getString("FirstName"), rs.getString("LastName"), rs.getString("BusinessName"), rs.getString("Bio"), rs.getInt("YearsOfExperience")))
+                    val rawRating = rs.getDouble("AvgRating")
+                    contractors.add(Contractor(
+                        rs.getInt("UserID"), rs.getString("FirstName"), rs.getString("LastName"),
+                        rs.getString("BusinessName"), rs.getString("Bio"), rs.getInt("YearsOfExperience"),
+                        if (rawRating == 0.0) 0.0 else String.format("%.1f", rawRating).toDouble()
+                    ))
                 }
                 call.respond(contractors)
             } finally { db.close() }
@@ -50,13 +56,22 @@ fun Route.publicRoutes() {
             val id = call.parameters["id"]?.toIntOrNull() ?: return@get call.respond(HttpStatusCode.BadRequest)
             val db = DbConnection.getConnection() ?: return@get call.respond(HttpStatusCode.InternalServerError)
             try {
-                val pQuery = "SELECT U.FirstName, U.LastName, CP.BusinessName, CP.Bio, CP.YearsOfExperience, COALESCE((SELECT AVG(CAST(Rating AS FLOAT)) FROM Reviews WHERE ContractorID = U.UserID), 0.0) as AvgRating FROM Users U JOIN ContractorProfiles CP ON U.UserID = CP.UserID WHERE U.UserID = ?"
+                val pQuery = """
+                    SELECT U.FirstName, U.LastName, CP.BusinessName, CP.Bio, CP.YearsOfExperience,
+                    COALESCE((SELECT AVG(CAST(Rating AS FLOAT)) FROM Reviews WHERE ContractorID = U.UserID), 0.0) as AvgRating
+                    FROM Users U JOIN ContractorProfiles CP ON U.UserID = CP.UserID WHERE U.UserID = ?
+                """.trimIndent()
                 val pStmt = db.prepareStatement(pQuery)
                 pStmt.setInt(1, id)
                 val pRs = pStmt.executeQuery()
                 if (!pRs.next()) return@get call.respond(HttpStatusCode.NotFound)
-                val profile = Contractor(id, pRs.getString("FirstName"), pRs.getString("LastName"), pRs.getString("BusinessName"), pRs.getString("Bio"), pRs.getInt("YearsOfExperience"))
+
                 val avgRating = pRs.getDouble("AvgRating")
+                val profile = Contractor(
+                    id, pRs.getString("FirstName"), pRs.getString("LastName"),
+                    pRs.getString("BusinessName"), pRs.getString("Bio"), pRs.getInt("YearsOfExperience"),
+                    if (avgRating == 0.0) 0.0 else String.format("%.1f", avgRating).toDouble()
+                )
 
                 val reviews = mutableListOf<Review>()
                 val rQuery = "SELECT R.ReviewID, R.Rating, R.Comment, U.FirstName + ' ' + U.LastName as ClientName, CONVERT(VARCHAR, R.CreatedAt, 103) as Fecha FROM Reviews R JOIN Users U ON R.ClientID = U.UserID WHERE R.ContractorID = ? ORDER BY R.CreatedAt DESC"
@@ -71,7 +86,10 @@ fun Route.publicRoutes() {
         }
 
         post("/reviews") {
-            val data = call.receive<ReviewRequest>()
+            val data = try { call.receive<ReviewRequest>() } catch (e: Exception) {
+                call.respond(HttpStatusCode.BadRequest, "Datos inválidos")
+                return@post
+            }
             val db = DbConnection.getConnection() ?: return@post call.respond(HttpStatusCode.InternalServerError)
             try {
                 val query = "INSERT INTO Reviews (Rating, Comment, ClientID, ContractorID) VALUES (?, ?, ?, ?)"
@@ -82,8 +100,6 @@ fun Route.publicRoutes() {
                 stmt.setInt(4, data.ContractorID)
                 stmt.executeUpdate()
                 call.respond(HttpStatusCode.Created, "Reseña guardada")
-            } catch (e: Exception) {
-                call.respond(HttpStatusCode.InternalServerError, e.message ?: "Error")
             } finally { db.close() }
         }
     }
