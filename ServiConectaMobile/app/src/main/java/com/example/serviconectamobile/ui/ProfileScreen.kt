@@ -27,12 +27,23 @@ fun ProfileScreen(onBack: () -> Unit, onLogoutSuccess: () -> Unit) {
     val session = remember { SessionManager(context) }
     val orangeBrand = Color(0xFFFF9900)
 
-    // Estados para el formulario del contratista
     var businessName by remember { mutableStateOf("") }
     var bio by remember { mutableStateOf("") }
     var experience by remember { mutableStateOf("") }
-    var selectedCategoryId by remember { mutableStateOf(1) } // ID de categoría por defecto
     var isSaving by remember { mutableStateOf(false) }
+
+    var categories by remember { mutableStateOf<List<CategoryResponse>>(emptyList()) }
+    var expanded by remember { mutableStateOf(false) }
+    var selectedCategoryName by remember { mutableStateOf("Seleccionar Categoría") }
+    var selectedCategoryId by remember { mutableStateOf(-1) }
+
+    LaunchedEffect(Unit) {
+        try {
+            categories = RetrofitClient.instance.getCategories()
+        } catch (e: Exception) {
+            Toast.makeText(context, "Error al cargar categorías", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     Scaffold(
         containerColor = Color.Black,
@@ -40,7 +51,7 @@ fun ProfileScreen(onBack: () -> Unit, onLogoutSuccess: () -> Unit) {
             TopAppBar(
                 title = { Text("MI CUENTA", fontWeight = FontWeight.Black, fontSize = 16.sp) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = null, tint = orangeBrand) }
+                    IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null, tint = orangeBrand) }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Black, titleContentColor = Color.White)
             )
@@ -50,21 +61,18 @@ fun ProfileScreen(onBack: () -> Unit, onLogoutSuccess: () -> Unit) {
             modifier = Modifier.padding(padding).padding(16.dp).fillMaxSize().verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Avatar
             Box(modifier = Modifier.size(80.dp).background(orangeBrand, CircleShape), contentAlignment = Alignment.Center) {
                 Text(session.getUserName().take(1).uppercase(), fontSize = 35.sp, fontWeight = FontWeight.Black)
             }
             Spacer(Modifier.height(10.dp))
             Text(session.getUserName(), color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
 
-            // Badge de Rol
             Surface(color = if(session.getUserRole() == "Contratista") orangeBrand else Color.Gray, shape = RoundedCornerShape(4.dp)) {
                 Text(session.getUserRole().uppercase(), color = Color.Black, fontWeight = FontWeight.Black, fontSize = 10.sp, modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp))
             }
 
             Spacer(Modifier.height(24.dp))
 
-            // SI ES CONTRATISTA, MOSTRAR FORMULARIO PROFESIONAL
             if (session.getUserRole() == "Contratista") {
                 Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1A1A))) {
                     Column(modifier = Modifier.padding(16.dp)) {
@@ -75,13 +83,51 @@ fun ProfileScreen(onBack: () -> Unit, onLogoutSuccess: () -> Unit) {
                         ProfileField("Años de Experiencia", experience, { experience = it }, orangeBrand, KeyboardType.Number)
                         ProfileField("Breve Biografía", bio, { bio = it }, orangeBrand)
 
-                        Text("ID DE CATEGORÍA (1:Plomero, 2:Electricista...)", color = Color.Gray, fontSize = 10.sp)
-                        ProfileField("Categoría ID", selectedCategoryId.toString(), { selectedCategoryId = it.toIntOrNull() ?: 1 }, orangeBrand, KeyboardType.Number)
+                        // --- DROPDOWN SELECTOR ---
+                        Text("CATEGORÍA DE SERVICIO", color = Color.Gray, fontSize = 10.sp, modifier = Modifier.padding(bottom = 4.dp))
+                        ExposedDropdownMenuBox(
+                            expanded = expanded,
+                            onExpandedChange = { expanded = !expanded }
+                        ) {
+                            OutlinedTextField(
+                                value = selectedCategoryName,
+                                onValueChange = {},
+                                readOnly = true,
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                                modifier = Modifier.menuAnchor().fillMaxWidth(),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = orangeBrand,
+                                    unfocusedBorderColor = Color.DarkGray,
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White
+                                )
+                            )
+                            ExposedDropdownMenu(
+                                expanded = expanded,
+                                onDismissRequest = { expanded = false },
+                                modifier = Modifier.background(Color(0xFF1A1A1A))
+                            ) {
+                                categories.forEach { category ->
+                                    DropdownMenuItem(
+                                        text = { Text(category.CategoryName, color = Color.White) },
+                                        onClick = {
+                                            selectedCategoryName = category.CategoryName
+                                            selectedCategoryId = category.CategoryID
+                                            expanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
 
-                        Spacer(Modifier.height(16.dp))
+                        Spacer(Modifier.height(24.dp))
 
                         Button(
                             onClick = {
+                                if (selectedCategoryId == -1) {
+                                    Toast.makeText(context, "Elige una categoría", Toast.LENGTH_SHORT).show()
+                                    return@Button
+                                }
                                 scope.launch {
                                     isSaving = true
                                     try {
@@ -89,7 +135,7 @@ fun ProfileScreen(onBack: () -> Unit, onLogoutSuccess: () -> Unit) {
                                             UpdateContractorRequest(session.getUserId(), businessName, bio, experience.toIntOrNull() ?: 0, selectedCategoryId)
                                         )
                                         if (response.isSuccessful) {
-                                            Toast.makeText(context, "¡Perfil actualizado! Ya eres visible en el catálogo.", Toast.LENGTH_LONG).show()
+                                            Toast.makeText(context, "¡Perfil actualizado!", Toast.LENGTH_LONG).show()
                                         }
                                     } catch (e: Exception) {
                                         Toast.makeText(context, "Error al guardar", Toast.LENGTH_SHORT).show()
@@ -108,7 +154,6 @@ fun ProfileScreen(onBack: () -> Unit, onLogoutSuccess: () -> Unit) {
             }
 
             Spacer(Modifier.height(24.dp))
-
             Button(
                 onClick = { session.logout(); onLogoutSuccess() },
                 modifier = Modifier.fillMaxWidth().height(50.dp),

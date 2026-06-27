@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.serviconectamobile.data.*
 import com.example.serviconectamobile.network.RetrofitClient
+import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -27,23 +28,33 @@ fun ContractorDetailScreen(contractorId: Int, onBack: () -> Unit, onContactClick
     val scope = rememberCoroutineScope()
     val session = remember { SessionManager(context) }
     val orangeBrand = Color(0xFFFF9900)
+
     var detail by remember { mutableStateOf<ContractorFullDetail?>(null) }
     var isLoading by remember { mutableStateOf(true) }
+    var serviceCompleted by remember { mutableStateOf(false) } // <--- ESTADO DE SEGURIDAD
 
-    // Estados para la nueva reseña
     var myRating by remember { mutableStateOf(5) }
     var myComment by remember { mutableStateOf("") }
 
     LaunchedEffect(contractorId) {
-        try { detail = RetrofitClient.instance.getContractorDetail(contractorId) }
-        catch (e: Exception) { } finally { isLoading = false }
+        try {
+            detail = RetrofitClient.instance.getContractorDetail(contractorId)
+
+            // VALIDACIÓN DE SEGURIDAD:
+            val chatId = if (session.getUserId() < contractorId) "${session.getUserId()}_$contractorId" else "${contractorId}_${session.getUserId()}"
+            FirebaseFirestore.getInstance().collection("chats").document(chatId).get()
+                .addOnSuccessListener { doc ->
+                    // Solo es válido si el contratista marcó el servicio como 'completed'
+                    serviceCompleted = doc.getString("status") == "completed"
+                }
+        } catch (e: Exception) { } finally { isLoading = false }
     }
 
     Scaffold(
         containerColor = Color.Black,
         topBar = {
             TopAppBar(
-                title = { Text("PERFIL PROFESIONAL", fontWeight = FontWeight.Black, fontSize = 16.sp) },
+                title = { Text("PERFIL PROFESIONAL", fontWeight = FontWeight.Black) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null, tint = orangeBrand) } },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Black, titleContentColor = Color.White)
             )
@@ -52,7 +63,7 @@ fun ContractorDetailScreen(contractorId: Int, onBack: () -> Unit, onContactClick
             if (detail != null) {
                 FloatingActionButton(onClick = {
                     if (session.isLoggedIn()) onContactClick(detail!!.profile.UserID, detail!!.profile.FirstName)
-                    else Toast.makeText(context, "Inicia sesión para chatear", Toast.LENGTH_SHORT).show()
+                    else Toast.makeText(context, "Inicia sesión para contactar", Toast.LENGTH_SHORT).show()
                 }, containerColor = orangeBrand, contentColor = Color.Black, shape = CircleShape) {
                     Icon(Icons.Default.Chat, null)
                 }
@@ -71,7 +82,7 @@ fun ContractorDetailScreen(contractorId: Int, onBack: () -> Unit, onContactClick
                             }
                             Spacer(Modifier.height(8.dp))
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Star, null, tint = orangeBrand, modifier = Modifier.size(16.dp))
+                                Icon(Icons.Default.Star, null, tint = orangeBrand, modifier = Modifier.size(18.dp))
                                 Text(" ${data.averageRating}", color = Color.White, fontWeight = FontWeight.Bold)
                             }
                         }
@@ -80,17 +91,14 @@ fun ContractorDetailScreen(contractorId: Int, onBack: () -> Unit, onContactClick
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(data.profile.BusinessName ?: "${data.profile.FirstName} ${data.profile.LastName}", color = orangeBrand, fontSize = 22.sp, fontWeight = FontWeight.Bold)
                         Text("${data.profile.YearsOfExperience} Años de Experiencia", color = Color.Gray)
-                        Spacer(Modifier.height(20.dp))
-                        Text("BIO", color = Color.White, fontWeight = FontWeight.Bold)
-                        Text(data.profile.Bio ?: "Sin biografía.", color = Color.LightGray)
 
                         Spacer(Modifier.height(30.dp))
 
-                        // FORMULARIO PARA DEJAR RESEÑA (Solo Clientes logueados)
-                        if (session.isLoggedIn() && session.getUserId() != contractorId) {
+                        // SECCIÓN DE RESEÑA: Solo se muestra si el servicio fue completado oficialmente
+                        if (session.isLoggedIn() && serviceCompleted && session.getUserId() != contractorId) {
                             Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1A1A))) {
                                 Column(Modifier.padding(16.dp)) {
-                                    Text("DEJAR UNA RESEÑA", color = orangeBrand, fontWeight = FontWeight.Black)
+                                    Text("VALORA EL TRABAJO REALIZADO", color = orangeBrand, fontWeight = FontWeight.Black)
                                     Row {
                                         repeat(5) { index ->
                                             IconButton(onClick = { myRating = index + 1 }) {
@@ -100,28 +108,36 @@ fun ContractorDetailScreen(contractorId: Int, onBack: () -> Unit, onContactClick
                                     }
                                     OutlinedTextField(
                                         value = myComment, onValueChange = { myComment = it },
-                                        placeholder = { Text("¿Cómo fue tu experiencia?") },
+                                        placeholder = { Text("¿Cómo fue el servicio de ${data.profile.FirstName}?") },
                                         modifier = Modifier.fillMaxWidth(),
                                         colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = orangeBrand, focusedTextColor = Color.White, unfocusedTextColor = Color.White)
                                     )
                                     Button(
                                         onClick = {
                                             scope.launch {
-                                                val res = RetrofitClient.instance.postReview(ReviewRequest(myRating, myComment, session.getUserId(), contractorId))
-                                                if (res.isSuccessful) {
-                                                    Toast.makeText(context, "Reseña publicada", Toast.LENGTH_SHORT).show()
-                                                    myComment = ""
-                                                }
+                                                RetrofitClient.instance.postReview(ReviewRequest(myRating, myComment, session.getUserId(), contractorId))
+                                                Toast.makeText(context, "¡Gracias por tu reseña!", Toast.LENGTH_SHORT).show()
+                                                serviceCompleted = false // Ocultar después de calificar
                                             }
                                         },
                                         modifier = Modifier.padding(top = 8.dp).fillMaxWidth(),
                                         colors = ButtonDefaults.buttonColors(containerColor = orangeBrand)
-                                    ) { Text("PUBLICAR CALIFICACIÓN", color = Color.Black, fontWeight = FontWeight.Bold) }
+                                    ) { Text("PUBLICAR RESEÑA", color = Color.Black, fontWeight = FontWeight.Bold) }
                                 }
+                            }
+                        } else if (session.isLoggedIn() && !serviceCompleted && session.getUserId() != contractorId) {
+                            // Mensaje informativo para el cliente
+                            Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF111111)), border = BorderStroke(1.dp, Color.DarkGray)) {
+                                Text(
+                                    "La opción de calificar se habilitará una vez que el profesional marque el servicio como 'Finalizado' en el chat.",
+                                    color = Color.Gray,
+                                    fontSize = 12.sp,
+                                    modifier = Modifier.padding(16.dp)
+                                )
                             }
                         }
 
-                        Spacer(Modifier.height(20.dp))
+                        Spacer(Modifier.height(30.dp))
                         Text("RESEÑAS RECIENTES", color = Color.White, fontWeight = FontWeight.Black)
                         data.reviews.forEach { review ->
                             Card(Modifier.fillMaxWidth().padding(vertical = 4.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1A1A))) {

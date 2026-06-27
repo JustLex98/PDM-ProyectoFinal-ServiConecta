@@ -1,5 +1,6 @@
 package com.example.serviconectamobile.ui
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -7,6 +8,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -32,18 +34,22 @@ fun ChatScreen(receiverId: Int, receiverName: String, onBack: () -> Unit) {
 
     var messageText by remember { mutableStateOf("") }
     var messages by remember { mutableStateOf<List<Message>>(emptyList()) }
+    var chatStatus by remember { mutableStateOf("active") }
 
-    val chatId = if (session.getUserId() < receiverId)
-        "${session.getUserId()}_$receiverId" else "${receiverId}_${session.getUserId()}"
+    val chatId = if (session.getUserId() < receiverId) "${session.getUserId()}_$receiverId" else "${receiverId}_${session.getUserId()}"
 
     LaunchedEffect(Unit) {
+        // Escuchar mensajes
         db.collection("chats").document(chatId).collection("messages")
             .orderBy("timestamp", Query.Direction.ASCENDING)
             .addSnapshotListener { snapshot, _ ->
-                if (snapshot != null) {
-                    messages = snapshot.toObjects(Message::class.java)
-                }
+                if (snapshot != null) messages = snapshot.toObjects(Message::class.java)
             }
+
+        // Escuchar estado del chat (para saber si ya se finalizó)
+        db.collection("chats").document(chatId).addSnapshotListener { doc, _ ->
+            chatStatus = doc?.getString("status") ?: "active"
+        }
     }
 
     Scaffold(
@@ -53,6 +59,20 @@ fun ChatScreen(receiverId: Int, receiverName: String, onBack: () -> Unit) {
                 title = { Text(receiverName.uppercase(), fontSize = 16.sp, fontWeight = FontWeight.Black) },
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null, tint = orangeBrand) }
+                },
+                actions = {
+                    // BOTÓN DE SEGURIDAD: Solo el contratista puede finalizar el servicio
+                    if (session.getUserRole() == "Contratista" && chatStatus == "active") {
+                        TextButton(onClick = {
+                            db.collection("chats").document(chatId).update("status", "completed")
+                            Toast.makeText(context, "Servicio marcado como Finalizado", Toast.LENGTH_SHORT).show()
+                        }) {
+                            Icon(Icons.Default.CheckCircle, null, tint = orangeBrand)
+                            Text("FINALIZAR", color = orangeBrand, fontWeight = FontWeight.Bold)
+                        }
+                    } else if (chatStatus == "completed") {
+                        Text("FINALIZADO", color = Color.Green, fontSize = 10.sp, modifier = Modifier.padding(end = 8.dp))
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF1A1A1A), titleContentColor = Color.White)
             )
@@ -68,12 +88,7 @@ fun ChatScreen(receiverId: Int, receiverName: String, onBack: () -> Unit) {
                             shape = RoundedCornerShape(8.dp),
                             modifier = Modifier.padding(vertical = 4.dp)
                         ) {
-                            Text(
-                                text = msg.message,
-                                color = if (isMe) Color.Black else Color.White,
-                                modifier = Modifier.padding(12.dp),
-                                fontSize = 14.sp
-                            )
+                            Text(text = msg.message, color = if (isMe) Color.Black else Color.White, modifier = Modifier.padding(12.dp), fontSize = 14.sp)
                         }
                     }
                 }
@@ -86,6 +101,7 @@ fun ChatScreen(receiverId: Int, receiverName: String, onBack: () -> Unit) {
                         onValueChange = { messageText = it },
                         placeholder = { Text("Escribe un mensaje...", color = Color.Gray) },
                         modifier = Modifier.weight(1f),
+                        enabled = chatStatus == "active", // Bloquea el chat si ya terminó
                         colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = orangeBrand, unfocusedBorderColor = Color.DarkGray, focusedTextColor = Color.White, unfocusedTextColor = Color.White),
                         shape = RoundedCornerShape(25.dp)
                     )
@@ -94,25 +110,23 @@ fun ChatScreen(receiverId: Int, receiverName: String, onBack: () -> Unit) {
                         onClick = {
                             if (messageText.isNotBlank()) {
                                 val msgData = Message(session.getUserId(), receiverId, messageText, System.currentTimeMillis(), session.getUserName())
-
-                                // 1. Guardar el mensaje en la sub-colección
                                 db.collection("chats").document(chatId).collection("messages").add(msgData)
 
-                                // 2. ACTUALIZAR EL DOCUMENTO PADRE (Para que aparezca en el Inbox del otro)
                                 val chatSummary = mapOf(
                                     "lastMessage" to messageText,
                                     "user1Id" to session.getUserId(),
                                     "user1Name" to session.getUserName(),
                                     "user2Id" to receiverId,
                                     "user2Name" to receiverName,
-                                    "timestamp" to System.currentTimeMillis()
+                                    "timestamp" to System.currentTimeMillis(),
+                                    "status" to chatStatus // Mantiene el estado actual
                                 )
                                 db.collection("chats").document(chatId).set(chatSummary)
-
                                 messageText = ""
                             }
                         },
-                        modifier = Modifier.background(orangeBrand, RoundedCornerShape(50.dp))
+                        enabled = chatStatus == "active",
+                        modifier = Modifier.background(if(chatStatus == "active") orangeBrand else Color.Gray, RoundedCornerShape(50.dp))
                     ) { Icon(Icons.Default.Send, null, tint = Color.Black) }
                 }
             }
