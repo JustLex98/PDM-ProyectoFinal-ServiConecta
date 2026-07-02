@@ -7,10 +7,13 @@ import androidx.lifecycle.viewModelScope
 import com.example.serviconectamobile.data.LoginRequest
 import com.example.serviconectamobile.data.RegisterRequest
 import com.example.serviconectamobile.data.SessionManager
+import com.example.serviconectamobile.network.ApiService
 import com.example.serviconectamobile.network.RetrofitClient
 import kotlinx.coroutines.launch
 
-class LoginViewModel : ViewModel() {
+class LoginViewModel(
+    private val apiService: ApiService = RetrofitClient.instance
+) : ViewModel() {
     var email by mutableStateOf("")
     var password by mutableStateOf("")
     var firstName by mutableStateOf("")
@@ -31,7 +34,7 @@ class LoginViewModel : ViewModel() {
             isLoading = true
             errorMessage = ""
             try {
-                val response = RetrofitClient.instance.login(LoginRequest(email, password))
+                val response = apiService.login(LoginRequest(email, password))
                 if (response.isSuccessful) {
                     val user = response.body()
                     if (user != null) {
@@ -60,7 +63,7 @@ class LoginViewModel : ViewModel() {
             isLoading = true
             errorMessage = ""
             try {
-                val response = RetrofitClient.instance.register(
+                val response = apiService.register(
                     RegisterRequest(email, password, firstName, lastName, selectedRole)
                 )
                 if (response.isSuccessful) {
