@@ -4,10 +4,13 @@ import androidx.compose.runtime.*
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.serviconectamobile.data.ContractorResponse
+import com.example.serviconectamobile.network.ApiService
 import com.example.serviconectamobile.network.RetrofitClient
 import kotlinx.coroutines.launch
 
-class ContractorsViewModel : ViewModel() {
+class ContractorsViewModel(
+    private val apiService: ApiService = RetrofitClient.instance
+) : ViewModel() {
     var contractors by mutableStateOf<List<ContractorResponse>>(emptyList())
     var isLoading by mutableStateOf(false)
 
@@ -15,7 +18,7 @@ class ContractorsViewModel : ViewModel() {
         viewModelScope.launch {
             isLoading = true
             contractors = try {
-                RetrofitClient.instance.getContractors(categoryId)
+                apiService.getContractors(categoryId)
             } catch (_: Exception) {
                 emptyList()
             } finally {
